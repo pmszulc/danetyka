@@ -1,0 +1,307 @@
+Losowość wyników lotto
+================
+
+Granie w lotto, co do zasady, to strata pieniędzy. Najprościej uzasadnić
+to twierdzenie, licząc wartość oczekiwaną zysku z pojedynczej gry – jest
+ona ujemna. Kupując los za 3 zł, tracisz niewiele, a potencjalna nagroda
+jest bardzo duża – ale jak pomnożysz ją przez prawdopodobieństwo
+wygranej, w sumie tracisz około 2 zł (więcej na ten temat możesz
+poczytać np. tutaj <https://czywartogracwlotto.pl/>).
+
+Tego typu obliczenia opierają się na bardzo ważnym założeniu: wynik
+losowania jest, jak sama nazwa wskazuje, losowy. Całkowicie losowy. Nie
+da się w żaden sposób przewidzieć, jaki numer zostanie wylosowany. To
+sprawia, że nie jest możliwy żaden “system”: stawianie na numery rzadko
+występujące, często występujące, niewystępujące w ostatnim losowaniu
+itp. Ale może to założenie wcale nie jest prawdziwe? Czy stworzenie
+maszyny losującej jest takie proste? Kule są w niej ułożone zawsze w tej
+samej kolejności, czy to nie wpływa na wynik?
+
+Czy da się jakoś udowodnić losowość wyników lotto? Spróbujmy!
+
+## Dane
+
+Archiwalne wyniki można pobrać np. ze strony
+<http://www.mbnet.com.pl/wyniki.htm>. Są to dane dla Dużego Lotka (czyli
+losujemy 6 liczb z 49) od 1957 do 2022 roku. Poniżej wczytuję je i
+zmieniam ich kształt, bo pierwotnie wylosowane numery były w sześciu
+kolumnach: kula 1, kula 2 itd. W rzeczywistości kula 1 to wcale nie była
+pierwsza wylosowana, ale najmniejsza liczba (wyniki lotto podaje się
+uporządkowane). Po zmianie kształtu wszystkie wyniki mam w jednej
+kolumnie “number”.
+
+``` r
+library("tidyverse")
+library("lubridate")
+library("readxl")
+library("infer") 
+library("rstatix")
+theme_set(theme_classic())
+
+lotto <- read_excel("lotto.xls",
+  col_names = c("id", "date", "b1", "b2", "b3", "b4", "b5", "b6"))
+lotto <- lotto %>% 
+  mutate(date = dmy(date)) %>% 
+  pivot_longer(b1:b6, names_to = "ball", values_to = "number")
+glimpse(lotto)
+```
+
+    ## Rows: 40,128
+    ## Columns: 4
+    ## $ id     <chr> "1.", "1.", "1.", "1.", "1.", "1.", "2.", "2.", "2.", "2.", "2.~
+    ## $ date   <date> 1957-01-27, 1957-01-27, 1957-01-27, 1957-01-27, 1957-01-27, 19~
+    ## $ ball   <chr> "b1", "b2", "b3", "b4", "b5", "b6", "b1", "b2", "b3", "b4", "b5~
+    ## $ number <dbl> 8, 12, 31, 39, 43, 45, 5, 10, 11, 22, 25, 27, 18, 19, 20, 26, 4~
+
+## Czym jest losowość?
+
+Musimy sobie teraz zadać pytanie, jakich wyników oczekiwać przy
+założeniu, że są losowe? Łatwo odpowiedzieć: całkowicie losowych. Ale
+jak to sprawdzić? Można przecież argumentować, że skoro coś jest
+całkowicie losowe, to nie może mieć żadnej struktury – nie może pasować
+do żadnego wzorca, więc nie ma możliwości SPRAWDZENIA, czy zachowuje się
+“poprawnie”. Zawsze było to dla mnie interesujące, że jest odwrotnie.
+Jeśli coś jest losowe, to owszem, kolejny wynik jest nie do przewidzenia
+i nie można ocenić, czy jest “losowy”. Natomiast jak tych wyników jest
+dużo, sytuacja zmienia się diametralnie.
+
+Najprościej wytłumaczyć to na przykładzie rzutu monetą. Nie wiem, co
+wypadnie w pojedynczym rzucie, ale jak rzucę 1000 razy, to WIEM, że
+reszek i orłów powinno być mniej więcej pół na pół. A przynajmniej taki
+wynik jest najbardziej prawdopodobny. Duże odstępstwo od tej równowagi
+świadczyłoby o tym, że najprawdopodobniej z monetą coś jest nie tak
+(albo z moim rzucaniem).
+
+## Rozkład wyników lotto
+
+Jak w takim razie powinny rozkładać się wyniki lotto? Oczekujemy, że
+każdy z numerów pojawi się mniej więcej podobną liczbę razy. Mówiąc
+bardziej fachowo: rozkład wyników powinien być jednostajny. Poniższy
+wykres pokazuje, ile razy wypadł każdy z numerów.
+
+``` r
+ggplot(lotto, aes(number)) +
+  geom_bar(fill = "#c09254") +
+  labs(x = "Numer", y = "Liczba wystąpień")
+```
+
+<img src="lotto_files/figure-gfm/unnamed-chunk-3-1.png" width="70%" style="display: block; margin: auto;" />
+
+Czy to jest rozkład jednostajny? Mniej więcej tak. Co prawda niektóre z
+numerów pojawiają się częściej, ale nie ma co oczekiwać, że każdy
+zostanie wylosowane DOKŁADNIE tyle samo razy (jeśli liczba losowań nie
+jest wielokrotnością 49, jest to nawet niemożliwe).
+
+Sformułowanie “mniej więcej” nie brzmi dobrze. Czy da się jakoś
+precyzyjniej potwierdzić, że jest to rozkład jednostajny? Owszem:
+istnieją odpowiednie testy statystyczne, które oceniają zgodność z
+rozkładem. Poniżej używam testu chi-kwadrat, sprawdzając, czy
+prawdopodobieństwo wylosowania każdej z liczb jest równe 1/49, bo tyle
+powinno wynosić dla rozkład jednostajnego.
+
+``` r
+lotto %>% 
+  count(number) %>% 
+  pull(n) %>% 
+  chisq_test()
+```
+
+    ## # A tibble: 1 x 6
+    ##       n statistic     p    df method          p.signif
+    ## * <int>     <dbl> <dbl> <dbl> <chr>           <chr>   
+    ## 1    49      58.9 0.135    48 Chi-square test ns
+
+Otrzymaliśmy p-wartość = 0.135, co świadczy o braku dowodów na
+odstępstwo od jednostajności – a w takim razie twierdzenie, że mamy do
+czynienia z takim właśnie rozkładem, jest jak najbardziej uprawnione, a
+wręcz statystycznie udowodnione.
+
+## Testowanie hipotez
+
+Parę uwag dla tych, którzy w swojej pracy wykorzystywali tego typu
+testy. Precyzyjna interpretacja wyników nie do końca jest taka, jak
+byśmy chcieli. Testy te działają na takiej zasadzie, że zakładamy, że
+pewna hipoteza (nazywana zerową) jest prawdziwa – w tym przypadku, że
+rozkład JEST jednostajny. Następnie zastanawiamy się, czy ta hipoteza
+jest do utrzymania. P-wartość jest miarą tego, na ile obserwowane wyniki
+przeczą hipotezie. Jeśli jest ona “mała” (w praktyce za taką uznaje się
+najczęściej wartość poniżej 0,05), uważamy, że obserwowane wyniki są
+mało prawdopodobne (przy założeniu, że hipoteza zerowa jest prawdziwa).
+A skoro tak, nie wierzymy w jej prawdziwość.
+
+W naszym przypadku p-wartość nie jest mała, a w takim razie wyniki nie
+przeczą prawdziwości hipotezy. Ale co do zasady tylko tyle. Tzn. nie
+jest to dowód prawdziwości hipotezy, a jedynie brak dowodów jej
+nieprawdziwości.
+
+Jeśli wydaje się komuś, że to jest to samo, to rozważmy proces sądowy, w
+którym oskarżono kogoś o kradzież. Czy brak dowodów tego czynu DOWODZI
+czyjejś niewinności? Nie, niewinność się zakłada (domniemywa) i albo
+dowody przeczą temu założeniu – i wtedy odrzucamy tę “hipotezę”, albo
+nie. Ale brak dowodów kradzieży nie dowodzi, że nie miała ona miejsca.
+
+Wracając do naszych wyników, czyżbyśmy w takim razie nic nie udowodnili?
+Przeciwnie. Wynika to z tego, że mamy bardzo dużo obserwacji: na każdy
+numer przypada ich ponad 750. Jeśli byłoby ich mało, to rzeczywiście,
+brak dowodu na odstępstwo od jednostajności nie jest żadnym dowodem na
+jednostajność. Ale 750 wyników na numer to wystarczająco dużo, żeby te
+odstępstwa – gdyby były – zostałyby wykryte.
+
+## To nie koniec…
+
+Możemy w takim razie uznać, że wyniki rozkładają się jednostajnie. Czy
+to zamyka temat? Dowodzi losowości? Niestety sprawa jest znacznie
+trudniejsza, niż mogłoby się wydawać. Powiedzmy, że rzuciłem 1000 razy
+monetą i wyszło mi ok. 500 reszek i 500 orłów. Wierzycie, że wyniki są
+losowe? (moneta jest symetryczna). A jeśli powiem Wam, że najpierw 500
+razy pod rząd wypadła reszka, a potem 500 razy orzeł?
+
+Jest to ekstremalnie mało prawdopodobne, jeśli założymy, że z monetą (i
+moim rzucaniem) wszystko jest w porządku. W takim razie znaczenie ma nie
+tylko suma wyników, ale też ich kolejność. Jednostajność końcowego
+rozkładu jest tylko jednym z aspektów losowości. Jeśli wyniki nie byłyby
+losowe, rozkład nie byłby jednostajny, ale jeśli jest, to jeszcze nie
+dowodzi losowości – bo rozkład jednostajny możemy otrzymać również w
+nielosowym procesie.
+
+Jakie inne “aspekty losowości” muszą być spełnione? W przypadku rzutu
+monetą, powinniśmy zaobserwować pewną liczbę ciągów, w których np. orzeł
+wypadł trzy razy pod rząd. Swoją drogą, jeśli poprosicie kogoś, by
+zapisał 1000 wyników rzutu monetą, najpewniej nie zadba o to – i
+będziecie mogli łatwo sprawdzić, czy naprawdę rzucał, czy nie. Problem w
+tym, że my chcemy zrobić coś przeciwnego: udowodnić losowość, a nie
+oszustwo. A tego typu możliwych ciągów do sprawdzenia jest mnóstwo: pięć
+orłów pod rząd, ciągi naprzemienne orzeł-reszka-orzeł-reszka, dwa orły
+pod rząd, a potem trzy reszki itd. Jeśli wybiorę tylko co piąty wynik
+rzutu monetą, to czy wśród nich będzie mniej więcej pół na pół orzeł i
+reszek?
+
+Wróćmy do losowań lotto. Tutaj takich aspektów losowości łatwo wymyślić
+jeszcze więcej. Jeśli w każdy poniedziałek jakimś dziwnym trafem
+wylosowane numery są ze zbioru 1-25, a w każdy piątek ze zbioru 26-49,
+ostatecznie otrzymamy rozkład jednostajny, ale wyniki na pewno nie są
+losowe. Jak w takim razie do tego podejść?
+
+## Jak udowodnić losowość?
+
+Trzeba pokazać, że w **dowolnym momencie** każdy z numerów może być
+wylosowany z takim samym prawdopodobieństwem. A precyzyjniej: dowolny
+numer, które nie został jeszcze wylosowany w danym losowaniu. Bo jeśli
+ten “dowolny moment” to połowa losowania, to liczby, które już zostały
+wylosowane, oczywiście nie mogą być wybrane po raz drugi
+(prawdopodobieństwo ich wylosowania wynosi zero). To utrudnia sprawę, bo
+są znane specjalne testy sprawdzające, czy kolejne generowane liczby są
+losowe – ale w przypadku lotto nie zdadzą egzaminu, bo kolejną liczbą po
+np. 42 prawie na pewno nie będzie 42 (jedyny możliwy przypadek jest
+wtedy, gdy 42 to ostatni wylosowany numer, a pierwszy w kolejnym
+losowaniu to też 42). Swoją drogą, jestem ciekaw, czy różne testy
+generatorów losowych rzeczywiście wykryłyby takie zaburzenie losowości.
+
+Problemem jest jeszcze to, że w danych, które analizujemy, nie mamy
+informacji o kolejności. Biorąc to wszystko pod uwagę, proponuję podejść
+do tego w taki sposób: udowodnijmy, że dowolnie wybrany podzbiór wyników
+ma rozkład jednostajny (bez zwracania uwagi na kolejność).
+
+Tutaj na początku miałem pewną wątpliwość, bo jeśli w tym podzbiorze
+będzie więcej niż jeden wynik z tego samego losowania, całość może nie
+być losowa z tych powodów, które wyżej podałem. Natomiast ma to tak mały
+wpływ, że można zignorować (choć na wszelki wypadek sprawdziłem, tzn.
+analizę przeprowadziłem też w taki sposób, by z jednego losowania nie
+brać więcej niż jednej liczby).
+
+Ale to nie koniec problemów. Ponieważ próbuję pokazać, że każdy z
+numerów jest losowany z tym samym prawdopodobieństwem, a jest ich sporo
+(49), potrzebuję wystarczająco dużo obserwacji na każdy numer. Jeśli np.
+wylosuję tylko 100 numerów, na każdy z nich będą przypadać średnio tylko
+dwie obserwacje. To zdecydowanie za mało. Wcześniej oczywiście nie było
+tego problemu, bo testowaliśmy cały zbiór danych. Co prawda teraz też
+mogę zadbać, żeby ten podzbiór były odpowiednio duży, nie chciałbym
+jednak pójść w tym kierunku, żeby nie było zarzutu, że te podzbiory
+niewiele różnią się całkowitego zbioru.
+
+Stwierdziłem więc, że odpowiednio pogrupuję numery. Jest ich 49, można
+więc stworzyć 7 grup po 7 liczb, np. 1-7 oznaczyć jako “1”, 8-14 jako
+“2” itd. Zrobiłem inaczej, podzieliłem numery modulo 7. Dostajemy wtedy
+7 różnych reszt z dzielenia, a do jednej grupy należą numery np. 1, 8,
+15, 22, 29, 36 i 43. Może się to wydawać dziwne, ale technicznie było
+najprościej zapisać.
+
+Pytanie, czy to nie jest jakieś oszustwo? Czy na pewno sprawdzę wtedy,
+czy pierwotne liczby są losowe? Rzeczywiście, to nie jest do końca to
+samo. Natomiast uważam za nieprawdopodobne, żeby ktoś tak skonstruował
+lotto, że numery nie pojawiają się losowo, ale pogrupowane w tak
+arbitralny sposób (reszta z dzielenia) już tak.
+
+## Procedura
+
+Podsumowując, procedura wygląda następująco. Na początku losuję liczbę
+całkowitą ze zbioru od 100 do 1000 – tyle numerów wylosuję później z
+całego zbioru. To w zasadzie nie ma prawie żadnego znaczenia i mógłbym
+ustalić rozmiar zbioru, który losuję, ale z drugiej strony, ponieważ
+implementacja tego nie stanowi problemu, to niech będzie: losujmy
+podzbiory różnej wielkości. W drugim kroku losuję podzbiór, następnie
+podliczam, ile razy został wylosowany każdy numer i liczę p-wartość dla
+testu chi-kwadrat. Całość powtarzam 10 tysięcy razy (używam tu funkcji
+`replicate()`), czyli dostaję tyle p-wartości.
+
+``` r
+N <- nrow(lotto)
+get_p <- function(n_min = 100, n_max = 1000) {
+  n <- sample(n_min:n_max, 1)
+  p <- lotto %>% 
+    slice_sample(n = n) %>% 
+    mutate(number = number %% 7) %>% 
+    count(number) %>%
+    pull(n) %>%
+    chisq_test() %>%
+    pull(p)
+  return(p)
+}
+
+set.seed(42)
+p <- replicate(1e4, get_p())
+```
+
+## Podsumowanie wyników
+
+Co teraz z nimi zrobić? Jeśli słabo rozumiemy ideę testowania hipotez i
+p-wartości, możemy pomyśleć, że skoro wyniki w każdym podzbiorze mają
+być całkowicie losowe, to za każdym razem powinienem otrzymać dużą
+p-wartość. Jest inaczej: z definicji p-wartość wynika, że jeśli hipoteza
+zerowa jest prawdziwa, w 5% przypadków powinniśmy otrzymać p-wartości
+poniżej 0,05. Więcej: rozkład wszystkich p-wartości powinien być
+jednostajny.
+
+Sprawdźmy w takim razie, w ilu przypadkach otrzymaliśmy p-wartość
+poniżej 0,05.
+
+``` r
+mean(p < 0.05)
+```
+
+    ## [1] 0.0556
+
+Oczywiście nie ma co oczekiwać, że dostaniemy dokładnie 0,05. Natomiast
+gdyby z losowością było coś nie tak (i to nawet subtelnie), p-wartość
+poniżej 0,05 otrzymalibyśmy prawie zawsze. Także losowość wyników lotto
+uznaję za udowodnioną.
+
+Możemy jeszcze spojrzeć na histogram dla wszystkich p-wartości, czy
+rzeczywiście mamy do czynienia z rozkładem jednostajnym.
+
+``` r
+ggplot() +
+  geom_histogram(aes(p), fill = "#c09254", breaks = seq(0, 1, by = 0.05)) +
+  labs(x = "p-wartość", y = "n")
+```
+
+<img src="lotto_files/figure-gfm/unnamed-chunk-7-1.png" width="70%" style="display: block; margin: auto;" />
+
+Zgadza się. Moglibyśmy pójść o krok dalej i odpowiednim testem (np.
+Kołmogorowa-Smirnowa) sprawdzić, czy ten rozkład jest jednostajny (tym
+razem mamy do czynienia z rozkładem ciągłym, dlatego wcześniej
+wykorzystywany test chi-kwadrat nie jest optymalny – choć po podzieleniu
+p-wartości na przedziały wciąż możliwy do zastosowania). Istnieje jednak
+obawa, że zamiast testować losowość lotto, zacznę testować poprawność
+testów statystycznych, dokładność oszacowań p-wartości itd., także nie
+idę w tym kierunku.
