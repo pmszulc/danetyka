@@ -1,0 +1,3 @@
+Dane można pobrać stąd:
+https://www.kaggle.com/datasets/seascape/snp-dataset-for-gwas
+Nie umieszczałem ich tutaj, bo są duże
