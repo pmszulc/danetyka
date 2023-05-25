@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>wojna</title>
+<title>Jak długo trzeba grać w wojnę?</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -43,9 +43,23 @@ ul.task-list li input[type="checkbox"] {
 
 <main class="content" id="quarto-document-content">
 
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Jak długo trzeba grać w wojnę?</h1>
+</div>
 
 
-<p>linkedin: Jak długo trzeba grać w wojnę? Czy można być “dobrym” w wojnę?</p>
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+</header>
+
 <div class="cell">
 
 </div>
@@ -167,28 +181,70 @@ ul.task-list li input[type="checkbox"] {
 <section id="to-tyle" class="level2">
 <h2 class="anchored" data-anchor-id="to-tyle">To tyle</h2>
 <p>Zabierając się za ten temat, myślałem, że to będzie krótki wpis na bloga, ale nie wyszło. Gdyby ktoś chciał poeksperymentować, cały kod dostępny tutaj.</p>
-</section>
-<section id="backup" class="level2">
-<h2 class="anchored" data-anchor-id="backup">Backup</h2>
-<section id="sprawdzenie" class="level3">
-<h3 class="anchored" data-anchor-id="sprawdzenie">Sprawdzenie</h3>
-<div class="cell" data-layout-align="center">
-
-</div>
-</section>
-<section id="permutacje" class="level3">
-<h3 class="anchored" data-anchor-id="permutacje">Permutacje</h3>
-<p>Dla malej liczby kart można rozważyć wszystkie unikalne permutacje. Niestety już dla n=16 jest ich pond 30 mln.</p>
-<div class="cell" data-layout-align="center">
-
-</div>
-</section>
-<section id="pętle-1" class="level3">
-<h3 class="anchored" data-anchor-id="pętle-1">Pętle</h3>
-<div class="cell" data-layout-align="center">
-
-</div>
-</section>
+<!-- ## Backup -->
+<!-- ### Sprawdzenie -->
+<!-- ```{r} -->
+<!-- # najkrotszy pojedynek -->
+<!-- wyniki_df %>% -->
+<!--   arrange(kroki) -->
+<!-- # spr. -->
+<!-- n <- 52 -->
+<!-- id <- 1 -->
+<!-- rozgrywka(id, n) -->
+<!-- set.seed(id) -->
+<!-- karty <- sample(rep(1:(n/4), each = 4)) -->
+<!-- gracz1 <- karty[1:(n/2)] -->
+<!-- gracz2 <- karty[(n/2 + 1):n] -->
+<!-- i <- 0 -->
+<!-- wynik <- pojedynek(gracz1, gracz2) -->
+<!-- gracz1 <- wynik$gracz1 -->
+<!-- gracz2 <- wynik$gracz2 -->
+<!-- if (length(gracz1) == 0 & length(gracz2) == 0) { -->
+<!--   return(c(seed, NA, i)) # remis po "i" krokach -->
+<!-- } else if (length(gracz1) == 0) { -->
+<!--   return(c(seed, 2, i)) # wygral gracz 2 po "i" krokach -->
+<!-- } else if (length(gracz2) == 0) { -->
+<!--   return(c(seed, 1, i)) -->
+<!-- } -->
+<!-- gracz1; gracz2 -->
+<!-- i <- i + 1 -->
+<!-- ``` -->
+<!-- ### Permutacje -->
+<!-- Dla malej liczby kart można rozważyć wszystkie unikalne permutacje. Niestety już dla n=16 jest ich pond 30 mln. -->
+<!-- ```{r} -->
+<!-- library("RcppAlgos") -->
+<!-- k <- 4 -->
+<!-- n <- k * 4 # talia -->
+<!-- max <- 1e5 # maksymalna dlugosc pojedynku -->
+<!-- karty <- permuteGeneral(v = 1:k, freq = rep(4, k)) -->
+<!-- karty <- karty[1:(nrow(karty)/2), ] # wystarczy polowa -->
+<!-- N <- nrow(karty) -->
+<!-- id <- 1:N -->
+<!-- wyniki <- future_map(id, ~ rozgrywka_permut(., karty), .progress = TRUE,  -->
+<!--   .options = furrr_options(seed = TRUE)) -->
+<!-- wyniki_df <- tibble( -->
+<!--   zwyciezca = map_vec(wyniki, ~ .[2]), -->
+<!--   kroki = map_vec(wyniki, ~ .[3]) -->
+<!-- ) -->
+<!-- # remisy? -->
+<!-- k <- wyniki_df %>% -->
+<!--   filter(is.na(zwyciezca)) %>%  -->
+<!--   nrow() -->
+<!-- k -->
+<!-- k/N -->
+<!-- # 0.07370851 -->
+<!-- ``` -->
+<!-- ### Pętle -->
+<!-- ```{r} -->
+<!-- # petla dla 20 kart: -->
+<!-- # rozdanie: -->
+<!-- # 5 1 2 1 3 4 1 3 4 4 -->
+<!-- # 4 2 2 5 5 2 5 3 3 1 -->
+<!-- # petla: -->
+<!-- # 4 2 4 2 4 1 -->
+<!-- # 3 5 1 5 2 5 3 3 3 1 5 2 4 1 -->
+<!-- # po 16 krokach to samo -->
+<!-- ``` -->
 </section>
 
 </main>
