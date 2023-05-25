@@ -88,8 +88,8 @@ naszą).
 Wykonałem milion symulacji, poniżej rozkład czasów trwania całej
 rozgrywki (w minutach, skala logarytmiczna).
 
-<img src="unnamed-chunk-4-1.png" style="width:70.0%"
-data-fig-align="center" />
+<img src="wojna_files/figure-commonmark/unnamed-chunk-4-1.png"
+style="width:70.0%" data-fig-align="center" />
 
 Przeciętnie cała gra trwa od 10 do 28 minut (rozstęp kwartylowy),
 średnia arytmetyczna 22 minuty, 96% rozgrywek kończy się przed upływem
@@ -133,8 +133,8 @@ Poniżej szacowane prawdopodobieństwa remisu dla różnych wielkości talii
 10 milionów, dla większej liczby kart nawet do 100 milionów (bo
 prawdopodobieństwa stają się bardzo małe).
 
-<img src="unnamed-chunk-6-1.png" style="width:70.0%"
-data-fig-align="center" />
+<img src="wojna_files/figure-commonmark/unnamed-chunk-6-1.png"
+style="width:70.0%" data-fig-align="center" />
 
 Widać, że nie jest to przypadkowa relacja, rządzi nią jakiś wzór.
 Dopasowałem do danych model regresji. Podszedłem do tego dość prosto:
@@ -143,8 +143,8 @@ przyjąłem model postaci `log(p) ~ n + n^2`. Jak widać niżej, taka
 funkcja niemal idealnie przechodzi przez wszystkie punkty (zaznaczyłem
 ją na czerwono).
 
-<img src="unnamed-chunk-8-1.png" style="width:70.0%"
-data-fig-align="center" />
+<img src="wojna_files/figure-commonmark/unnamed-chunk-8-1.png"
+style="width:70.0%" data-fig-align="center" />
 
 Dokonując ekstrapolacji, prawdopodobieństwo remisu dla 52 kart to mniej
 więcej jeden na 20 biliardów. Żeby wartość oczekiwana liczby remisów
@@ -192,8 +192,8 @@ iteracji dla skończonych gier to 6033; poza tym podniesienie limitu do
 
 Poniżej rozkłady dla wszystkich trzech strategii (bez pętli).
 
-<img src="unnamed-chunk-11-1.png" style="width:70.0%"
-data-fig-align="center" />
+<img src="wojna_files/figure-commonmark/unnamed-chunk-11-1.png"
+style="width:70.0%" data-fig-align="center" />
 
 Czyli być może to moje wspomnienie, że gra w wojnę ciągnie się
 nieskończoność, ma jakieś solidniejsze podstawy?
