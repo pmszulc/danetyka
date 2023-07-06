@@ -1,0 +1,1197 @@
+---
+title: "SMOTE?"
+author: "Piotr Szulc"
+format: html
+editor: source
+---
+
+## Dane
+
+```{r}
+library("tidyverse")
+library("tidymodels")
+library("vip")
+library("bonsai")
+library("smotefamily")
+library("doParallel")
+library("themis")
+library("probably")
+library("furrr")
+plan(multisession, workers = 8)
+theme_set(ggpubr::theme_pubr(base_size = 13))
+source("functions.R")
+
+#all_cores <- parallel::detectCores(logical = FALSE)
+#cl <- makePSOCKcluster(all_cores)
+#registerDoParallel(cl)
+```
+
+```{r}
+mammo <- read_csv("data/mammography.csv",
+    col_names = c("X1", "X2", "X3", "X4", "X5", "X6", "Y")) %>% 
+  mutate(Y = fct_recode(Y, "0" = "'-1'", "1" = "'1'")) %>% 
+  mutate(Y = fct_relevel(Y, "1"))
+glimpse(mammo)
+count(mammo, Y)
+260 / nrow(mammo)
+
+thyroid <- read_delim("data/thyroid.csv", delim = ";") %>% 
+  rename(Y = `Outlier_label `) %>% 
+  mutate(Y = fct_recode(Y, "0" = "n", "1" = "o"), Y = fct_relevel(Y, "1")) %>% 
+  select(-c(`...23`, `...24`)) %>% 
+  mutate(across(Sex:psych, as.factor))
+glimpse(thyroid)
+count(thyroid, Y)
+250 / nrow(thyroid)
+
+pulsar <- read_csv("data/pulsar.csv") %>% 
+  rename(Y = "Class") %>% 
+  mutate(Y = as.factor(Y), Y = fct_relevel(Y, "1"))
+count(pulsar, Y)
+```
+
+## Mammography
+
+```{r}
+set.seed(42)
+tune_folds <- vfold_cv(mammo, v = 10, repeats = 3, strata = Y)
+cv_folds <- vfold_cv(mammo, v = 10, repeats = 20, strata = Y)
+
+metrics_roc <- metric_set(roc_auc, sens, spec)
+metrics_pr <- metric_set(pr_auc, recall, precision)
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+```
+
+### Oryginalne
+
+```{r}
+rf_recipe <- recipe(Y ~ ., mammo)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 6)), min_n = min_n(c(1, 500)))
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params1_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit1_roc <- rf_wflow %>% 
+  finalize_workflow(params1_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params1_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit1_pr <- rf_wflow %>% 
+  finalize_workflow(params1_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### SMOTE
+
+```{r}
+rf_recipe <- recipe(Y ~ ., mammo) %>% 
+  #step_smote(Y)
+  step_smote(Y, over_ratio = 0.2, neighbors = 5)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params2_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit2_roc <- rf_wflow %>% 
+  finalize_workflow(params2_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params2_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit2_pr <- rf_wflow %>% 
+  finalize_workflow(params2_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### Weak
+
+```{r}
+# rf_fit1 %>% extract_fit_engine() %>% vip()
+rf_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 3)), min_n = min_n(c(1, 500)))
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params3_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit3_roc <- rf_wflow %>% 
+  finalize_workflow(params3_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params3_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit3_pr <- rf_wflow %>% 
+  finalize_workflow(params3_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### Weak SMOTE
+
+```{r}
+rf_recipe <- recipe(Y ~ X1 + X2 + X3, mammo) %>% 
+  #step_smote(Y)
+  step_smote(Y, over_ratio = 0.2, neighbors = 5)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params4_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit4_roc <- rf_wflow %>% 
+  finalize_workflow(params4_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params4_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit4_pr <- rf_wflow %>% 
+  finalize_workflow(params4_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### Wyniki
+
+```{r}
+results1 <- bind_rows(
+  collect_metrics(rf_fit1_roc) %>% add_column(params1_roc), 
+  collect_metrics(rf_fit1_pr) %>% add_column(params1_pr)
+) %>% mutate(Model = "Strong", SMOTE = "No", .before = 1)
+
+results2 <- bind_rows(
+  collect_metrics(rf_fit2_roc) %>% add_column(params2_roc), 
+  collect_metrics(rf_fit2_pr) %>% add_column(params2_pr)
+) %>% mutate(Model = "Strong", SMOTE = "Yes", .before = 1)
+
+results3 <- bind_rows(
+  collect_metrics(rf_fit3_roc) %>% add_column(params3_roc), 
+  collect_metrics(rf_fit3_pr) %>% add_column(params3_pr)
+) %>% mutate(Model = "Weak", SMOTE = "No", .before = 1)
+
+results4 <- bind_rows(
+  collect_metrics(rf_fit4_roc) %>% add_column(params4_roc), 
+  collect_metrics(rf_fit4_pr) %>% add_column(params4_pr)
+) %>% mutate(Model = "Weak", SMOTE = "Yes", .before = 1)
+
+mammo_results <- bind_rows(results1, results2, results3, results4) %>% 
+  select(-c(.estimator, n, .config)) %>% 
+  mutate(calibration = "No")
+
+## Modyfikacja progow
+
+new_results1 <- modify_threshold(mammo_results, rf_fit1_roc, "Strong", "sens")
+new_results2 <- modify_threshold(mammo_results, rf_fit1_pr, "Strong", "recall")
+new_results3 <- modify_threshold(mammo_results, rf_fit3_roc, "Weak", "sens")
+new_results4 <- modify_threshold(mammo_results, rf_fit3_pr, "Weak", "recall")
+new_results <- bind_rows(new_results1, new_results2, new_results3, new_results4)
+
+# dorzucam AUC i wyniki dla SMOTE (niezmienione)
+new_results <- mammo_results %>% 
+  filter(.metric %in% c("pr_auc", "roc_auc") | (SMOTE == "Yes")) %>% 
+  mutate(calibration = "Yes") %>% 
+  bind_rows(new_results)
+
+mammo_results <- bind_rows(mammo_results, new_results) %>% 
+  mutate(.metric = fct_relevel(.metric, 
+    c("roc_auc", "pr_auc", "sens", "spec", "recall", "precision")))
+
+plot_results(mammo_results, c("roc_auc", "sens", "spec"), calibr = "No")
+plot_results(mammo_results, c("roc_auc", "sens", "spec"), calibr = "Yes")
+plot_results(mammo_results, c("pr_auc", "sens", "spec"), calibr = "No")
+plot_results(mammo_results, c("pr_auc", "sens", "spec"), calibr = "Yes")
+```
+
+## Thyroid
+
+```{r}
+set.seed(42)
+tune_folds <- vfold_cv(mammo, v = 10, repeats = 3, strata = Y)
+cv_folds <- vfold_cv(mammo, v = 10, repeats = 20, strata = Y)
+
+metrics_roc <- metric_set(roc_auc, sens, spec)
+metrics_pr <- metric_set(pr_auc, recall, precision)
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+```
+
+### Oryginalne
+
+```{r}
+rf_recipe <- recipe(Y ~ ., thyroid)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 20)), min_n = min_n(c(1, 500)))
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params1_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit1_roc <- rf_wflow %>% 
+  finalize_workflow(params1_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params1_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit1_pr <- rf_wflow %>% 
+  finalize_workflow(params1_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### SMOTE
+
+```{r}
+rf_recipe <- recipe(Y ~ ., thyroid) %>% 
+  step_smotenc(Y)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params2_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit2_roc <- rf_wflow %>% 
+  finalize_workflow(params2_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params2_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit2_pr <- rf_wflow %>% 
+  finalize_workflow(params2_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### Weak
+
+```{r}
+rf_recipe <- recipe(Y ~ ., thyroid) %>% 
+  step_rm(TSH)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 19)), min_n = min_n(c(1, 500)))
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params3_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit3_roc <- rf_wflow %>% 
+  finalize_workflow(params3_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params3_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit3_pr <- rf_wflow %>% 
+  finalize_workflow(params3_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### Weak SMOTE
+
+```{r}
+rf_recipe <- recipe(Y ~ ., thyroid) %>% 
+  step_rm(TSH) %>% 
+  step_smotenc(Y)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+## Tuning ROC
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(roc_auc)
+)
+params4_roc <- select_best(rf_tune) %>% select(-.config)
+rf_fit4_roc <- rf_wflow %>% 
+  finalize_workflow(params4_roc) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_roc,
+    control = control_resamples(save_pred = TRUE)
+  )
+
+## Tuning PR
+
+rf_tune <- rf_wflow %>% tune_bayes(
+  resamples = tune_folds,
+  param_info = rf_params,
+  initial = 10, iter = 10,
+  metrics = metric_set(pr_auc)
+)
+params4_pr <- select_best(rf_tune) %>% select(-.config)
+rf_fit4_pr <- rf_wflow %>% 
+  finalize_workflow(params4_pr) %>% 
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metrics_pr,
+    control = control_resamples(save_pred = TRUE)
+  )
+```
+
+### Wyniki
+
+```{r}
+results1 <- bind_rows(
+  collect_metrics(rf_fit1_roc) %>% add_column(params1_roc), 
+  collect_metrics(rf_fit1_pr) %>% add_column(params1_pr)
+) %>% mutate(Model = "Strong", SMOTE = "No", .before = 1)
+
+results2 <- bind_rows(
+  collect_metrics(rf_fit2_roc) %>% add_column(params2_roc), 
+  collect_metrics(rf_fit2_pr) %>% add_column(params2_pr)
+) %>% mutate(Model = "Strong", SMOTE = "Yes", .before = 1)
+
+results3 <- bind_rows(
+  collect_metrics(rf_fit3_roc) %>% add_column(params3_roc), 
+  collect_metrics(rf_fit3_pr) %>% add_column(params3_pr)
+) %>% mutate(Model = "Weak", SMOTE = "No", .before = 1)
+
+results4 <- bind_rows(
+  collect_metrics(rf_fit4_roc) %>% add_column(params4_roc), 
+  collect_metrics(rf_fit4_pr) %>% add_column(params4_pr)
+) %>% mutate(Model = "Weak", SMOTE = "Yes", .before = 1)
+
+thyroid_results <- bind_rows(results1, results2, results3, results4) %>% 
+  select(-c(.estimator, n, .config)) %>% 
+  mutate(calibration = "No")
+
+## Modyfikacja progow
+
+new_results1 <- modify_threshold(thyroid_results, rf_fit1_roc, "Strong", "sens")
+new_results2 <- modify_threshold(thyroid_results, rf_fit1_pr, "Strong", "recall")
+new_results3 <- modify_threshold(thyroid_results, rf_fit3_roc, "Weak", "sens")
+new_results4 <- modify_threshold(thyroid_results, rf_fit3_pr, "Weak", "recall")
+new_results <- bind_rows(new_results1, new_results2, new_results3, new_results4)
+
+# dorzucam AUC i wyniki dla SMOTE (niezmienione)
+new_results <- thyroid_results %>% 
+  filter(.metric %in% c("pr_auc", "roc_auc") | (SMOTE == "Yes")) %>% 
+  mutate(calibration = "Yes") %>% 
+  bind_rows(new_results)
+
+thyroid_results <- bind_rows(thyroid_results, new_results) %>% 
+  mutate(.metric = fct_relevel(.metric, 
+    c("roc_auc", "pr_auc", "sens", "spec", "recall", "precision")))
+
+plot_results(thyroid_results, c("roc_auc", "sens", "spec"), calibr = "No")
+plot_results(thyroid_results, c("pr_auc", "recall", "precision"), calibr = "No")
+plot_results(thyroid_results, c("roc_auc", "sens", "spec"), calibr = "Yes")
+plot_results(thyroid_results, c("pr_auc", "recall", "precision"), calibr = "Yes")
+```
+
+## Tuning k i over_ratio
+
+### Las losowy
+
+```{r}
+set.seed(42)
+tune_folds <- vfold_cv(mammo, v = 10, repeats = 3, strata = Y)
+cv_folds <- vfold_cv(mammo, v = 10, repeats = 20, strata = Y)
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+rf_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 3)), min_n = min_n(c(1, 500)))
+
+tune_rf <- function(ratio, k, metric) {
+  if (ratio > 0) {
+    rf_recipe <- rf_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  if (metric == "auc") {
+    my_metric <- metric_set(roc_auc)
+  } else {
+    my_metric <- metric_set(pr_auc)
+  }
+  rf_wflow <- workflow() %>%
+    add_model(rf_model) %>%
+    add_recipe(rf_recipe)
+  rf_tune <- rf_wflow %>% tune_bayes(
+    resamples = tune_folds,
+    param_info = rf_params,
+    initial = 10,
+    iter = 10,
+    metrics = my_metric
+  )
+
+  params <- select_best(rf_tune)
+  rf_fit <- rf_wflow %>% 
+    finalize_workflow(params) %>% 
+    fit_resamples(
+      resamples = cv_folds,
+      metrics = my_metric
+    )
+  show_best(rf_fit) %>% 
+    select(.metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1) %>% 
+    mutate(min_n = params$min_n, mtry = params$mtry)
+}
+
+ratios <- c(0.05, 0.1, 0.2, 0.5, 1)
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+roc_ratio <- map2_dfr(params$ratios, params$k, tune_rf, metric = "auc", .progress = TRUE)
+pr_ratio <- map2_dfr(params$ratios, params$k, tune_rf, metric = "pr", .progress = TRUE)
+results_mammo_ratio <- bind_rows(roc_ratio, pr_ratio)
+
+results_mammo_ratio %>% 
+  slice_max(mean, by = c(over_ratio, .metric)) %>% 
+  ggplot(aes(over_ratio, mean, group = 1)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err),
+    width = 0.02, linewidth = 1) +
+  facet_wrap(vars(.metric), scales = "free")
+```
+
+### LightGBM
+
+```{r}
+set.seed(42)
+tune_folds <- vfold_cv(mammo, v = 10, repeats = 3, strata = Y)
+cv_folds <- vfold_cv(mammo, v = 10, repeats = 20, strata = Y)
+
+lgbm_model <- boost_tree(mtry = tune(), trees = tune(), min_n = tune(), 
+    tree_depth = tune(), learn_rate = tune(), loss_reduction = tune()) %>%
+  set_mode("classification") %>% 
+  set_engine("lightgbm")
+lgbm_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+lgbm_wflow <- workflow() %>%
+  add_model(lgbm_model) %>%
+  add_recipe(lgbm_recipe)
+lgbm_params <- extract_parameter_set_dials(lgbm_wflow) %>%
+  update(mtry = mtry(c(1, 3)), min_n = min_n(c(1, 500)))
+
+tune_lgbm <- function(ratio, k, metric) {
+  if (ratio > 0) {
+    lgbm_recipe <- lgbm_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  if (metric == "auc") {
+    my_metric <- metric_set(roc_auc)
+  } else {
+    my_metric <- metric_set(pr_auc)
+  }
+  lgbm_wflow <- workflow() %>%
+    add_model(lgbm_model) %>%
+    add_recipe(lgbm_recipe)
+  lgbm_tune <- lgbm_wflow %>% tune_bayes(
+    resamples = tune_folds,
+    param_info = lgbm_params,
+    initial = 15,
+    iter = 5,
+    metrics = my_metric
+  )
+
+  params <- select_best(lgbm_tune)
+  lgbm_fit <- lgbm_wflow %>% 
+    finalize_workflow(params) %>% 
+    fit_resamples(
+      resamples = cv_folds,
+      metrics = my_metric
+    )
+  show_best(lgbm_fit) %>% 
+    select(.metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1) %>% 
+    mutate(min_n = params$min_n, mtry = params$mtry, 
+      trees = params$trees, tree_depth = params$tree_depth,
+      learn_rate = params$learn_rate, loss_reduction = params$loss_reduction)
+}
+
+ratios <- c(0.1, 0.2, 0.5, 1)
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+roc_ratio_lgbm <- map2_dfr(params$ratios, params$k, tune_lgbm, metric = "auc", 
+  .progress = TRUE)
+pr_ratio_lgbm <- map2_dfr(params$ratios, params$k, tune_lgbm, metric = "pr", 
+  .progress = TRUE)
+results_mammo_ratio_lgbm <- bind_rows(roc_ratio_lgbm, pr_ratio_lgbm)
+
+results_mammo_ratio_lgbm %>% 
+  slice_max(mean, by = c(over_ratio, .metric)) %>% 
+  ggplot(aes(over_ratio, mean, group = 1)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err),
+    width = 0.02, linewidth = 1) +
+  facet_wrap(vars(.metric), scales = "free")
+```
+
+### GLM
+
+```{r}
+set.seed(42)
+cv_folds <- vfold_cv(mammo, v = 10, repeats = 5, strata = Y)
+
+glm_model <- logistic_reg() %>%
+  set_mode("classification")
+glm_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+glm_wflow <- workflow() %>%
+  add_model(glm_model) %>%
+  add_recipe(glm_recipe)
+
+calc_glm <- function(ratio, k, metric) {
+  if (ratio > 0) {
+    glm_recipe <- glm_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  if (metric == "auc") {
+    my_metric <- metric_set(roc_auc)
+  } else {
+    my_metric <- metric_set(pr_auc)
+  }
+  glm_wflow <- workflow() %>%
+    add_model(glm_model) %>%
+    add_recipe(glm_recipe)
+
+  glm_fit <- glm_wflow %>% 
+    fit_resamples(
+      resamples = cv_folds,
+      metrics = my_metric
+    )
+  show_best(glm_fit) %>% 
+    select(.metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1)
+}
+
+ratios <- c(0.1, 0.2, 0.5, 1)
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+roc_ratio_glm <- map2_dfr(params$ratios, params$k, calc_glm, metric = "auc", 
+  .progress = TRUE)
+pr_ratio_glm <- map2_dfr(params$ratios, params$k, calc_glm, metric = "pr", 
+  .progress = TRUE)
+results_mammo_ratio_glm <- bind_rows(roc_ratio_glm, pr_ratio_glm)
+
+results_mammo_ratio_glm %>% 
+  slice_max(mean, by = c(over_ratio, .metric)) %>% 
+  ggplot(aes(over_ratio, mean, group = 1)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err),
+    width = 0.02, linewidth = 1) +
+  facet_wrap(vars(.metric), scales = "free")
+```
+
+### Mniejsza dysproporcja
+
+```{r}
+set.seed(42)
+ind <- which(mammo$Y == "0")
+ind <- sample(ind, size = length(ind) * 7/8)
+mammo <- slice(mammo, -ind)
+
+tune_folds <- vfold_cv(mammo, v = 10, repeats = 3, strata = Y)
+cv_folds <- vfold_cv(mammo, v = 10, repeats = 20, strata = Y)
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+rf_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 3)), min_n = min_n(c(1, 100)))
+
+tune_rf <- function(ratio, k, metric) {
+  if (ratio > 0) {
+    rf_recipe <- rf_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  if (metric == "auc") {
+    my_metric <- metric_set(roc_auc)
+  } else {
+    my_metric <- metric_set(pr_auc)
+  }
+  rf_wflow <- workflow() %>%
+    add_model(rf_model) %>%
+    add_recipe(rf_recipe)
+  rf_tune <- rf_wflow %>% tune_bayes(
+    resamples = tune_folds,
+    param_info = rf_params,
+    initial = 10,
+    iter = 10,
+    metrics = my_metric
+  )
+
+  params <- select_best(rf_tune)
+  rf_fit <- rf_wflow %>% 
+    finalize_workflow(params) %>% 
+    fit_resamples(
+      resamples = cv_folds,
+      metrics = my_metric
+    )
+  show_best(rf_fit) %>% 
+    select(.metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1) %>% 
+    mutate(min_n = params$min_n, mtry = params$mtry)
+}
+
+ratios <- c(0.05, 0.1, 0.2, 0.5, 1)
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+roc_ratio <- map2_dfr(params$ratios, params$k, tune_rf, metric = "auc", .progress = TRUE)
+pr_ratio <- map2_dfr(params$ratios, params$k, tune_rf, metric = "pr", .progress = TRUE)
+results_mammo_ratio <- bind_rows(roc_ratio, pr_ratio)
+
+results_mammo_ratio %>% 
+  #slice_max(mean, by = c(over_ratio, .metric)) %>% 
+  filter(neighbors <= 5) %>% 
+  #ggplot(aes(over_ratio, mean, col = as.factor(neighbors))) +
+  ggplot(aes(over_ratio, mean, group = 1)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err),
+    width = 0.02, linewidth = 1) +
+  facet_wrap(vars(.metric), scales = "free")
+```
+
+## Nested CV
+
+### Las losowy
+
+```{r}
+set.seed(42)
+cv_folds <- nested_cv(mammo, 
+  outside = vfold_cv(mammo, v = 10, repeats = 20, strata = Y),
+  inside = vfold_cv(mammo, v = 3, repeats = 5, strata = Y)
+)
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+rf_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 3)), min_n = min_n(c(1, 500)))
+
+
+tune_rf <- function(data, ratio, k, metric) {
+  if (ratio > 0) {
+    rf_recipe <- rf_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  rf_wflow <- workflow() %>%
+    add_model(rf_model) %>%
+    add_recipe(rf_recipe)
+  rf_tune <- rf_wflow %>% tune_bayes(
+    resamples = data,
+    param_info = rf_params,
+    initial = 10,
+    iter = 5,
+    metrics = metric_set(roc_auc)
+  )
+  show_best(rf_tune, n = 1) %>% 
+    select(mtry, min_n, .metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1)
+}
+
+ratios <- c(0.1, 0.2, 0.5) # brak "1", zeby bylo szybciej
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+tune_params <- function(inner_data) {
+  roc_ratio <- map2_dfr(params$ratios, params$k, tune_rf,
+    metric = "auc", data = inner_data)
+  params <- slice_max(roc_ratio, mean, n = 1, with_ties = FALSE)
+  params
+}
+
+calc_auc <- function(outer_data, params) {
+  # params -- najlepsze parametry wybrane na inner_data
+  rf_recipe <- rf_recipe %>% 
+    step_smote(Y, over_ratio = params$over_ratio, neighbors = params$neighbors)
+  rf_wflow <- workflow() %>%
+    add_model(rf_model) %>%
+    add_recipe(rf_recipe)
+  rf_fit <- rf_wflow %>% 
+    finalize_workflow(params) %>% 
+    fit(analysis(outer_data))
+  results <- assessment(outer_data) %>% 
+    add_column(predict(rf_fit, assessment(outer_data), type = "prob"))
+  roc_auc(results, Y, .pred_1) %>%
+    pull(.estimate)
+}
+
+params_list <- future_map(cv_folds$inner_resamples, tune_params, .progress = TRUE,
+  .options = furrr_options(seed = TRUE))
+auc <- map2_dbl(cv_folds$splits, params_list, calc_auc, .progress = TRUE)
+results <- bind_rows(params_list) %>% 
+  mutate(auc = auc)
+# to AUC porownaj z inna strategia: nie robie SMOTE
+# (porownaj tez bez nested cv?)
+
+# teraz zabraniam uzywania SMOTE
+params <- tibble(ratios = 0, k = 0) # jedyna mozliwosc
+params_list2 <- future_map(cv_folds$inner_resamples, tune_params, .progress = TRUE,
+  .options = furrr_options(seed = TRUE))
+auc <- map2_dbl(cv_folds$splits, params_list2, calc_auc, .progress = TRUE)
+results2 <- bind_rows(params_list2) %>% 
+  mutate(auc = auc)
+
+results_smote_nested <- bind_rows(list(SMOTE = results, Original = results2), 
+  .id = "method") 
+ggplot(results_smote_nested, aes(auc, fill = method)) +
+  geom_density(alpha = 0.6)
+summarise(results_smote_nested, auc_mean = mean(auc), sd = sd(auc)/sqrt(n()),
+  .by = method)
+#   method   auc_mean      sd
+#   SMOTE       0.908 0.00337
+#   Original    0.902 0.00358
+```
+
+### LightGBM
+
+```{r}
+set.seed(42)
+cv_folds <- nested_cv(mammo, 
+  outside = vfold_cv(mammo, v = 10, repeats = 10, strata = Y),
+  inside = vfold_cv(mammo, v = 3, repeats = 1, strata = Y)
+)
+
+lgbm_model <- boost_tree(mtry = tune(), trees = tune(), min_n = tune(), 
+    tree_depth = tune(), learn_rate = tune(), loss_reduction = tune()) %>%
+  set_mode("classification") %>% 
+  set_engine("lightgbm")
+lgbm_recipe <- recipe(Y ~ X1 + X2 + X3, mammo)
+lgbm_wflow <- workflow() %>%
+  add_model(lgbm_model) %>%
+  add_recipe(lgbm_recipe)
+lgbm_params <- extract_parameter_set_dials(lgbm_wflow) %>%
+  update(mtry = mtry(c(1, 3)), min_n = min_n(c(1, 500)))
+
+
+tune_lgbm <- function(data, ratio, k, metric) {
+  if (ratio > 0) {
+    lgbm_recipe <- lgbm_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  lgbm_wflow <- workflow() %>%
+    add_model(lgbm_model) %>%
+    add_recipe(lgbm_recipe)
+  lgbm_tune <- lgbm_wflow %>% tune_bayes(
+    resamples = data,
+    param_info = lgbm_params,
+    initial = 15,
+    iter = 5,
+    metrics = metric_set(roc_auc)
+  )
+  show_best(lgbm_tune, n = 1) %>% 
+    select(mtry, min_n, trees, tree_depth, learn_rate, loss_reduction,
+      .metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1)
+}
+
+ratios <- c(0.1, 0.2, 0.5) # brak "1", zeby bylo szybciej
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+tune_params <- function(inner_data) {
+  require("bonsai")
+  roc_ratio <- map2_dfr(params$ratios, params$k, tune_lgbm,
+    metric = "auc", data = inner_data)
+  params <- slice_max(roc_ratio, mean, n = 1, with_ties = FALSE)
+  params
+}
+
+calc_auc <- function(outer_data, params) {
+  # params -- najlepsze parametry wybrane na inner_data
+  lgbm_recipe <- lgbm_recipe %>% 
+    step_smote(Y, over_ratio = params$over_ratio, neighbors = params$neighbors)
+  lgbm_wflow <- workflow() %>%
+    add_model(lgbm_model) %>%
+    add_recipe(lgbm_recipe)
+  lgbm_fit <- lgbm_wflow %>% 
+    finalize_workflow(params) %>% 
+    fit(analysis(outer_data))
+  results <- assessment(outer_data) %>% 
+    add_column(predict(lgbm_fit, assessment(outer_data), type = "prob"))
+  roc_auc(results, Y, .pred_1) %>%
+    pull(.estimate)
+}
+
+params_list <- future_map(cv_folds$inner_resamples, tune_params, .progress = TRUE,
+  .options = furrr_options(seed = TRUE))
+auc <- map2_dbl(cv_folds$splits, params_list, calc_auc, .progress = TRUE)
+results <- bind_rows(params_list) %>% 
+  mutate(auc = auc)
+# to AUC porownaj z inna strategia: nie robie SMOTE
+# (porownaj tez bez nested cv?)
+
+# teraz zabraniam uzywania SMOTE
+params <- tibble(ratios = 0, k = 0) # jedyna mozliwosc
+params_list2 <- future_map(cv_folds$inner_resamples, tune_params, .progress = TRUE,
+  .options = furrr_options(seed = TRUE))
+auc <- map2_dbl(cv_folds$splits, params_list2, calc_auc, .progress = TRUE)
+results2 <- bind_rows(params_list2) %>% 
+  mutate(auc = auc)
+
+results_smote_nested_lgbm <- bind_rows(list(SMOTE = results, Original = results2), 
+  .id = "method") 
+ggplot(results_smote_nested_lgbm, aes(auc, fill = method)) +
+  geom_density(alpha = 0.6)
+summarise(results_smote_nested_lgbm, auc_mean = mean(auc), sd = sd(auc)/sqrt(n()),
+  .by = method)
+#   method   auc_mean      sd
+# 1 SMOTE       0.911 0.00314
+# 2 Original    0.908 0.00346
+```
+
+### GLM
+
+```{r}
+set.seed(42)
+cv_folds <- nested_cv(mammo, 
+  outside = vfold_cv(mammo, v = 10, repeats = 10, strata = Y),
+  inside = vfold_cv(mammo, v = 3, repeats = 1, strata = Y)
+)
+
+glm_model <- logistic_reg() %>%
+  set_mode("classification")
+glm_recipe <- recipe(Y ~ X1 + X2 + X3, mammo) %>% 
+  step_log(all_predictors(), offset = 1)
+glm_wflow <- workflow() %>%
+  add_model(glm_model) %>%
+  add_recipe(glm_recipe)
+
+tune_glm <- function(data, ratio, k, metric) {
+  if (ratio > 0) {
+    glm_recipe <- glm_recipe %>% 
+      step_smote(Y, over_ratio = ratio, neighbors = k)
+  }
+  glm_wflow <- workflow() %>%
+    add_model(glm_model) %>%
+    add_recipe(glm_recipe)
+  glm_tune <- glm_wflow %>% 
+    fit_resamples(
+      resamples = data,
+      metrics = metric_set(roc_auc)
+    )
+  show_best(glm_tune, n = 1) %>% 
+    select(.metric, mean, std_err) %>% 
+    mutate(over_ratio = ratio, neighbors = k, .before = 1)
+}
+
+ratios <- c(0.1, 0.2, 0.5, 1)
+k <- c(5, 10, 20, 50, 100)
+params <- expand_grid(ratios, k)
+params <- add_row(params, ratios = 0, k = 0)
+
+tune_params <- function(inner_data) {
+  roc_ratio <- map2_dfr(params$ratios, params$k, tune_glm,
+    metric = "auc", data = inner_data)
+  params <- slice_max(roc_ratio, mean, n = 1, with_ties = FALSE)
+  params
+}
+
+calc_auc <- function(outer_data, params) {
+  # params -- najlepsze parametry wybrane na inner_data
+  glm_recipe <- glm_recipe %>% 
+    step_smote(Y, over_ratio = params$over_ratio, neighbors = params$neighbors)
+  glm_wflow <- workflow() %>%
+    add_model(glm_model) %>%
+    add_recipe(glm_recipe)
+  glm_fit <- glm_wflow %>% 
+    fit(analysis(outer_data))
+  results <- assessment(outer_data) %>% 
+    add_column(predict(glm_fit, assessment(outer_data), type = "prob"))
+  roc_auc(results, Y, .pred_1) %>%
+    pull(.estimate)
+}
+
+params_list <- future_map(cv_folds$inner_resamples, tune_params, .progress = TRUE,
+  .options = furrr_options(seed = TRUE))
+auc <- map2_dbl(cv_folds$splits, params_list, calc_auc, .progress = TRUE)
+results <- bind_rows(params_list) %>% 
+  mutate(auc = auc)
+
+# teraz zabraniam uzywania SMOTE
+params <- tibble(ratios = 0, k = 0) # jedyna mozliwosc
+params_list2 <- future_map(cv_folds$inner_resamples, tune_params, .progress = TRUE,
+  .options = furrr_options(seed = TRUE))
+auc <- map2_dbl(cv_folds$splits, params_list2, calc_auc, .progress = TRUE)
+results2 <- bind_rows(params_list2) %>% 
+  mutate(auc = auc)
+
+results_smote_nested_glm <- bind_rows(list(SMOTE = results, Original = results2), 
+  .id = "method") 
+ggplot(results_smote_nested_glm, aes(auc, fill = method)) +
+  geom_density(alpha = 0.6)
+summarise(results_smote_nested_glm, auc_mean = mean(auc), sd = sd(auc)/sqrt(n()),
+  .by = method)
+#   method   auc_mean      sd
+# 1 SMOTE       0.875 0.00357
+# 2 Original    0.785 0.00546
+
+# Logarytmy:
+# 1 SMOTE       0.880 0.00341
+# 2 Original    0.865 0.00373
+```
+
+## Gorsza proprocja
+
+Sprawdzam, czy dla jeszcze większego niezbalansowania SMOTE jest lepszy.
+
+### Mammography
+
+```{r}
+k <- sum(mammo$Y == "1")
+k_rm <- seq(0, k - 50, length = 6) %>% round()
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+rf_recipe <- recipe(Y ~ ., mammo)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 6)))
+
+rf_recipe <- recipe(Y ~ ., mammo) %>% 
+  step_smote(Y)
+rf_wflow_smote <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+results_orig <- map_dfr(k_rm, proportion_perf_repeats, data = mammo,
+  wflow = rf_wflow, param_info = rf_params, smote = "No", repeats = 20,
+  .progress = TRUE)
+
+results_smote <- map_dfr(k_rm, proportion_perf_repeats, data = mammo,
+  wflow = rf_wflow_smote, param_info = rf_params, smote = "Yes", repeats = 20,
+  .progress = TRUE)
+
+results_mammo <- bind_rows(results_orig, results_smote)
+
+ggplot(results_mammo, aes(Proportion, mean, col = SMOTE)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err),
+    width = 0.0005, linewidth = 1) +
+  facet_wrap(vars(.metric), scales = "free") +
+  scale_x_reverse()
+```
+
+### Thyroid
+
+```{r}
+k <- sum(thyroid$Y == "1")
+k_rm <- seq(0, k - 50, length = 6) %>% round()
+
+rf_model <- rand_forest(mtry = tune(), min_n = tune(), trees = 1000)  %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+rf_recipe <- recipe(Y ~ ., thyroid)
+rf_wflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+rf_params <- extract_parameter_set_dials(rf_wflow) %>%
+  update(mtry = mtry(c(1, 8)))
+
+rf_recipe <- recipe(Y ~ ., thyroid) %>% 
+  step_smotenc(Y)
+rf_wflow_smote <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+results_orig <- map_dfr(k_rm, proportion_perf_repeats, data = thyroid,
+  wflow = rf_wflow, param_info = rf_params, smote = "No", repeats = 20,
+  .progress = TRUE)
+
+results_smote <- map_dfr(k_rm, proportion_perf_repeats, data = thyroid,
+  wflow = rf_wflow_smote, param_info = rf_params, smote = "Yes", repeats = 20,
+  .progress = TRUE)
+
+results_thyroid <- bind_rows(results_orig, results_smote)
+
+ggplot(results_thyroid, aes(Proportion, mean, col = SMOTE)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err),
+    width = 0.0005, linewidth = 1) +
+  facet_wrap(vars(.metric), scales = "free") +
+  scale_x_reverse()
+```

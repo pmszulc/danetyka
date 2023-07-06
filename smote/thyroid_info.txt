@@ -1,0 +1,1 @@
+https://www.kaggle.com/datasets/zhonglifr/thyroid-disease-unsupervised-anomaly-detection
