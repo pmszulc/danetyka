@@ -1,0 +1,35 @@
+Czerwone:
+1 Zobowiązany jesteś zmodernizować swoje miasto, płacisz za każdy dom 80 $,za każdy hotel 230 $.
+2 Remontujesz swoje domy. Płacisz do banku za każdy dom 50 $, za każdy hotel 200 $.
+3 Wracasz do Madrytu.
+4 Mandat za szybko jazdę. Płacisz 30 $.
+5 Cofasz się o trzy pola.
+6 Wracasz na start.
+7 Rozwiązałeś dobrze krzyżówkę. Jako 1 nagrodę otrzymujesz 200 $.
+8 Idziesz do więzienia. Nie przechodzisz przez start. Nie otrzymujesz premii 400 $.
+9 Płacisz opłatę za szkołę 300 $.
+10 Idziesz do Neapolu. Jeżeli przechodzisz przez start otrzymujesz 400 $.
+11 Piłeś w czasie pracy, płacisz karę 40 $.
+12 Wracasz do "Brukseli". Jeżeli przechodzi przez start otrzymujesz 400 $.
+13 Bank wypłaca Ci procenty w wysokości 100 $.
+14 Idziesz do "KOLEI WSCHODNICH". Jeżeli przechodzisz przez start otrzymujesz 400 $.
+15 Bank wpłaca Ci należne odsetki w wysokości 300 $.
+16 Wychodzisz wolny z więzienia. Kartę należy zachować do wykorzystania lub sprzedania.
+
+Niebieskie:
+1 Płacisz na budowę szpitala 400 $.
+2 Otrzymujesz w spadku 200 $.
+3 Masz urodziny otrzymujesz od każdego gracza po 20 $.
+4 Idziesz do więzienia. Nie przechodzisz przez start, nie otrzymujesz 400 $.
+5 Bank omylił się na twoją korzyść otrzymujesz 400 $.
+6 Płacisz składkę ubezpieczeniową w wysokości 20 $.
+7 Wychodzisz wolny z więzienia. Kartę należy zachować do wykorzystania lub sprzedania.
+8 Wracasz na start.
+9 Z magazynu, w którym kupujesz otrzymujesz rabat w wysokości 20 $.
+10 Otrzymujesz roczną rentę w wysokości 200 $.
+11 Wracasz do Wiednia.
+12 Płacisz za kartę 20 $ lub ciągniesz szansę z drugiego zestawu.
+13 Zająłeś II miejsce w konkursie piękności otrzymujesz z banku 200 $.
+14 Otrzymujesz zwrot nadpłaconego podatku dochodowego 40 $.
+15 Bank wypłaci ci należne 7% odsetek od kapitałów - otrzymujesz 50 $.
+16 Płacisz koszty leczenia w wysokości 20 $.
