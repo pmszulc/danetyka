@@ -1,0 +1,3 @@
+- wzrost ojca, matki i dzieci w cm
+- płeć: 0 = kobieta, 1 = mężczyzna
+- liczba dzieci w badanej rodzinie
